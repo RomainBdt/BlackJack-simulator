@@ -1,5 +1,6 @@
 #%%
 import random
+import pandas as pd
 
 SUITS = ["Hearts", "Diamonds", "Spades", "Clubs"]
 RANKS = ["Ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Jack", "Queen", "King"]
@@ -224,10 +225,8 @@ for _ in range(100000):
 
 print('END OF PROGRAM')
 
-# %%
-import pandas as pd
 df = pd.DataFrame(results, columns = ['Hand Value', 'Hand Status', 'Dealer Card', 'Gain'])
-# %%
+
 group = df.groupby(['Hand Value', 'Hand Status', 'Dealer Card']).mean()
 group.to_csv('results.csv')
 
