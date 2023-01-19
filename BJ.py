@@ -1,6 +1,7 @@
 #%%
 import random
 import pandas as pd
+from tqdm import trange
 
 SUITS = ["Hearts", "Diamonds", "Spades", "Clubs"]
 RANKS = ["Ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Jack", "Queen", "King"]
@@ -84,6 +85,13 @@ class Hand:
             self.options_available.remove("Split")
         return self.options_available
     
+    def is_soft_17(self):
+        if self.value == 17:
+            for card in self.cards:
+                if card.rank == "Ace" and card.value == 11:
+                    return True
+        return False
+    
     
 class Card:
     def __init__(self, suit, rank, value):
@@ -120,20 +128,22 @@ class Deck:
         random.shuffle(self.cards)
                     
 
-
-deck = Deck(8)
+n_decks = 8
+deck = Deck(n_decks)
 deck.shuffle()
 results = []
 VERBOSE = False
 invalid = []
+hit_on_soft_17 = True
+cum_gain = 0
 
-for _ in range(100000):
+for _ in trange(100000):
+    print('-'*50) if VERBOSE else None
     player_hands = [Hand([deck.cards.pop(), deck.cards.pop()], 0)]
     dealer_hand = Hand([deck.cards.pop(), deck.cards.pop()], 0)
     
     # Player's turn
-    for i, hand in enumerate(player_hands):
-        print('-'*50) if VERBOSE else None
+    for i, hand in enumerate(player_hands):    
         print("Your hand: ", hand) if VERBOSE else None
         print("Your hand value: ", hand.evaluate()) if VERBOSE else hand.evaluate()
         print("Dealer's 1st card: ", dealer_hand.cards[0]) if VERBOSE else None
@@ -158,11 +168,12 @@ for _ in range(100000):
                 else:
                     print("Invalid input")
                     invalid.append((hand, choice))
-                    continue
             print("Your hand: ", hand) if VERBOSE else None
             print("Your hand value: ", hand.evaluate()) if VERBOSE else hand.evaluate()
 
     # Dealer's turn
+    dealer_hand.evaluate()
+    dealer_hand.ace_check()
     if dealer_hand.is_blackjack():
             print("Dealer has blackjack!") if VERBOSE else None
     else:
@@ -170,14 +181,17 @@ for _ in range(100000):
             dealer_hand.evaluate()
             if dealer_hand.is_bust():
                 print("Dealer busts!") if VERBOSE else None
-                continue
             elif dealer_hand.value < 17:
+                dealer_hand.hit(deck)
+            elif hit_on_soft_17 and dealer_hand.is_soft_17():
+                print("Dealer hits on soft 17") if VERBOSE else None
                 dealer_hand.hit(deck)
             else:
                 dealer_hand.stand()
         print("Dealer's hand: ", dealer_hand) if VERBOSE else None
         
     # Results
+    cum_split_gain = 0
     for hand in player_hands:
         hand_value = hand.value
         hand_status = hand.status
@@ -197,6 +211,9 @@ for _ in range(100000):
         elif dealer_hand.status == "Blackjack":
             gain = -1
             print("You lose!") if VERBOSE else None
+        elif dealer_hand.status == "Bust":
+            gain = 1
+            print("You win!") if VERBOSE else None
         elif hand.status == "Stand":
             if hand.value > dealer_hand.value:
                 gain = 1
@@ -207,27 +224,43 @@ for _ in range(100000):
             else:
                 gain = -1
                 print("You lose!") if VERBOSE else None
+            hand_value_hit = hand_value - hand.cards[-1].value
+            results.append((hand_value_hit, "Hit", dealer_hand.cards[0].value, gain))  # when status == Stand, add into the results the hand value before drawing the last card
         else:
             print("Invalid input")
                     
+        print("Results player:", hand, hand_value, hand_status, gain) if VERBOSE else None
+        print("Results dealer:", dealer_hand, dealer_hand.value, dealer_hand.status) if VERBOSE else None 
         results.append((hand_value, hand_status, dealer_hand.cards[0].value, gain))
-
-        if hand.from_split:
-            hand_value = 2 * hand.cards[0].value
-            hand_status = "Split"
-            gain /= 2
-            results.append((hand_value, hand_status, dealer_hand.cards[0].value, gain))
+        cum_gain += gain
+        cum_bet += 1
+        
+        # Count split gains
+        if len(player_hands) > 1:
+            cum_split_gain += gain
+        
+    # Count split gains
+    if len(player_hands) > 1:
+        hand_value = 2 * player_hands[0].cards[0].value
+        hand_status = "Split"
+        hand = player_hands[0]
+        print('Split results') if VERBOSE else None
+        print("Results player:", hand, hand_value, hand_status, cum_split_gain / len(player_hands)) if VERBOSE else None
+        print("Results dealer:", dealer_hand, dealer_hand.value, dealer_hand.status) if VERBOSE else None 
+        results.append((hand_value, hand_status, dealer_hand.cards[0].value, cum_split_gain / len(player_hands)))
  
     # Check if deck needs to be reshuffled 
-    if len(deck.cards) < 52 * 4:
-        deck = Deck(2)
+    if len(deck.cards) < 52 * n_decks // 2:
+        deck = Deck(n_decks)
         deck.shuffle()
 
-print('END OF PROGRAM')
-
+# Format and export results
 df = pd.DataFrame(results, columns = ['Hand Value', 'Hand Status', 'Dealer Card', 'Gain'])
-
 group = df.groupby(['Hand Value', 'Hand Status', 'Dealer Card']).mean()
 group.to_csv('results.csv')
 
+group_cnt = df.groupby(['Hand Value', 'Hand Status', 'Dealer Card']).count()
+
+print('Cumulative gain:', cum_gain)
+print('END OF PROGRAM')
 # %%
