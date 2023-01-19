@@ -1,4 +1,4 @@
-#%%
+# %%
 import random
 import pandas as pd
 from tqdm import trange
@@ -10,9 +10,11 @@ class Hand:
     def __init__(self, cards, value):
         self.cards = cards
         self.value = value
-        self.options_available = ["Hit", "Stand"]
+        self.options_available = ["Hit", "Stand", "Double Down"]
         self.status = 'Active'
         self.from_split = False
+        self.gain_factor = 1
+
         
     def __str__(self):
         lst = []
@@ -34,7 +36,6 @@ class Hand:
             if card.rank == "Ace" and self.value > 21:
                 card.value = 1
                 self.value -= 10
-        return self.value
     
     def is_blackjack(self):
         if self.value == 21 and len(self.cards) == 2:
@@ -58,17 +59,16 @@ class Hand:
     
     def hit(self, deck):
         self.cards.append(deck.cards.pop())
-        return self.cards
     
     def stand(self):
         self.status = "Stand"
-        return self.status
     
-    def split(self):
+    def split(self, deck):
         if self.is_splitable():
-            # re initialize self
+            # create new hand
             new_hand = Hand([self.cards[1], deck.cards.pop()], 0)
             new_hand.from_split = True
+            # re initialize self
             self.__init__([self.cards[0], deck.cards.pop()], 0)
             self.from_split = True
             return new_hand
@@ -83,8 +83,12 @@ class Hand:
             self.options_available.append("Split")
         elif "Split" in self.options_available:
             self.options_available.remove("Split")
+        elif len(self.cards) == 2 and "Double Down" not in self.options_available:
+            self.options_available.append("Double Down")
+        elif len(self.cards) > 2 and "Double Down" in self.options_available:
+            self.options_available.remove("Double Down")
         return self.options_available
-    
+   
     def is_soft_17(self):
         if self.value == 17:
             for card in self.cards:
@@ -92,7 +96,11 @@ class Hand:
                     return True
         return False
     
-    
+    def double_down(self, deck):
+        self.hit(deck)
+        self.stand()
+        self.gain_factor = 2
+        
 class Card:
     def __init__(self, suit, rank, value):
         self.suit = suit
@@ -132,44 +140,46 @@ n_decks = 8
 deck = Deck(n_decks)
 deck.shuffle()
 results = []
-VERBOSE = False
+VERBOSE = True
 invalid = []
 hit_on_soft_17 = True
 cum_gain = 0
 
-for _ in trange(100000):
+for _ in range(10000):
     print('-'*50) if VERBOSE else None
     player_hands = [Hand([deck.cards.pop(), deck.cards.pop()], 0)]
     dealer_hand = Hand([deck.cards.pop(), deck.cards.pop()], 0)
     
     # Player's turn
-    for i, hand in enumerate(player_hands):    
-        print("Your hand: ", hand) if VERBOSE else None
-        print("Your hand value: ", hand.evaluate()) if VERBOSE else hand.evaluate()
+    for i, player_hand in enumerate(player_hands):    
+        print("Your hand: ", player_hand) if VERBOSE else None
+        print("Your hand value: ", player_hand.evaluate()) if VERBOSE else player_hand.evaluate()
         print("Dealer's 1st card: ", dealer_hand.cards[0]) if VERBOSE else None
         
-        while hand.status == "Active":            
-            if hand.is_blackjack():
+        while player_hand.status == "Active":            
+            if player_hand.is_blackjack():
                 print("Blackjack!") if VERBOSE else None
-            elif hand.is_bust():
+            elif player_hand.is_bust():
                 print("Bust!") if VERBOSE else None
             else:
-                hand.update_options()
-                print("Options: ", hand.options_available) if VERBOSE else None
-                choice = random.choice(hand.options_available)
-                print("Choice: ", choice) if VERBOSE else None
-                if choice == "Hit":
-                    hand.hit(deck)
-                elif choice == "Stand":
-                    hand.stand()
-                elif choice == "Split":
-                    player_hands.append(hand.split())
+                player_hand.update_options()
+                print("Options: ", player_hand.options_available) if VERBOSE else None
+                player_choice = random.choice(player_hand.options_available)
+                print("Choice: ", player_choice) if VERBOSE else None
+                if player_choice == "Hit":
+                    player_hand.hit(deck)
+                elif player_choice == "Stand":
+                    player_hand.stand()
+                elif player_choice == "Split":
+                    player_hands.append(player_hand.split(deck))
                     print("Split!") if VERBOSE else None
+                elif player_choice == "Double Down":
+                    player_hand.double_down(deck)
                 else:
                     print("Invalid input")
-                    invalid.append((hand, choice))
-            print("Your hand: ", hand) if VERBOSE else None
-            print("Your hand value: ", hand.evaluate()) if VERBOSE else hand.evaluate()
+                    invalid.append((player_hand, player_choice))
+            print("Your hand: ", player_hand) if VERBOSE else None
+            print("Your hand value: ", player_hand.evaluate()) if VERBOSE else player_hand.evaluate()
 
     # Dealer's turn
     dealer_hand.evaluate()
@@ -192,16 +202,16 @@ for _ in trange(100000):
         
     # Results
     cum_split_gain = 0
-    for hand in player_hands:
-        hand_value = hand.value
-        hand_status = hand.status
+    for player_hand in player_hands:
+        hand_value = player_hand.value
+        hand_status = player_hand.status
             
-        if hand.status == "Bust":
+        if player_hand.status == "Bust":
             gain = -1
-            hand_value -= hand.cards[-1].value
+            hand_value -= player_hand.cards[-1].value
             hand_status = "Hit"
             print("You lose!") if VERBOSE else None
-        elif hand.status == "Blackjack":
+        elif player_hand.status == "Blackjack":
             if dealer_hand.status == "Blackjack":
                 gain = 0
                 print("Push!") if VERBOSE else None
@@ -214,26 +224,26 @@ for _ in trange(100000):
         elif dealer_hand.status == "Bust":
             gain = 1
             print("You win!") if VERBOSE else None
-        elif hand.status == "Stand":
-            if hand.value > dealer_hand.value:
+        elif player_hand.status == "Stand":
+            if player_hand.value > dealer_hand.value:
                 gain = 1
                 print("You win!") if VERBOSE else None
-            elif hand.value == dealer_hand.value:
+            elif player_hand.value == dealer_hand.value:
                 gain = 0
                 print("Push!") if VERBOSE else None
             else:
                 gain = -1
                 print("You lose!") if VERBOSE else None
-            hand_value_hit = hand_value - hand.cards[-1].value
-            results.append((hand_value_hit, "Hit", dealer_hand.cards[0].value, gain))  # when status == Stand, add into the results the hand value before drawing the last card
+            hand_value_hit = hand_value - player_hand.cards[-1].value
+            results.append((hand_value_hit, "Hit", dealer_hand.cards[0].value, gain * player_hand.gain_factor))  # when status == Stand, add into the results the hand value before drawing the last card
         else:
             print("Invalid input")
-                    
-        print("Results player:", hand, hand_value, hand_status, gain) if VERBOSE else None
+              
+        gain *= player_hand.gain_factor      
+        print("Results player:", player_hand, hand_value, hand_status, gain) if VERBOSE else None
         print("Results dealer:", dealer_hand, dealer_hand.value, dealer_hand.status) if VERBOSE else None 
         results.append((hand_value, hand_status, dealer_hand.cards[0].value, gain))
         cum_gain += gain
-        cum_bet += 1
         
         # Count split gains
         if len(player_hands) > 1:
@@ -243,9 +253,9 @@ for _ in trange(100000):
     if len(player_hands) > 1:
         hand_value = 2 * player_hands[0].cards[0].value
         hand_status = "Split"
-        hand = player_hands[0]
+        player_hand = player_hands[0]
         print('Split results') if VERBOSE else None
-        print("Results player:", hand, hand_value, hand_status, cum_split_gain / len(player_hands)) if VERBOSE else None
+        print("Results player:", player_hand, hand_value, hand_status, cum_split_gain / len(player_hands)) if VERBOSE else None
         print("Results dealer:", dealer_hand, dealer_hand.value, dealer_hand.status) if VERBOSE else None 
         results.append((hand_value, hand_status, dealer_hand.cards[0].value, cum_split_gain / len(player_hands)))
  
