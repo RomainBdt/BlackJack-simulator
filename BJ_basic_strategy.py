@@ -69,6 +69,8 @@ class Hand:
             new_hand = Hand([self.cards[1], deck.cards.pop()], 0)
             new_hand.from_split = True
             # re initialize self
+            if self.cards[0].rank == "Ace":
+                self.cards[0].value = 11
             self.__init__([self.cards[0], deck.cards.pop()], 0)
             self.from_split = True
             return new_hand
@@ -89,8 +91,8 @@ class Hand:
             self.options_available.remove("Double Down")
         return self.options_available
    
-    def is_soft_17(self):
-        if self.value == 17:
+    def is_soft(self):
+        if len(self.cards) == 2:
             for card in self.cards:
                 if card.rank == "Ace" and card.value == 11:
                     return True
@@ -126,26 +128,33 @@ class Deck:
             for suit in SUITS:
                 for rank in RANKS:
                     if rank.isdigit():
-                        self.cards.append(Card(suit, rank, int(rank)))
+                        self.add_card(Card(suit, rank, int(rank)))
                     elif rank == "Ace":
-                        self.cards.append(Card(suit, rank, 11))
+                        self.add_card(Card(suit, rank, 11))
                     else:
-                        self.cards.append(Card(suit, rank, 10))
+                        self.add_card(Card(suit, rank, 10))
                     
     def shuffle(self):
         random.shuffle(self.cards)
+        
+    def add_card(self, card):
+        self.cards.append(card)
                     
 
 n_decks = 8
 deck = Deck(n_decks)
 deck.shuffle()
 results = []
-VERBOSE = True
+VERBOSE = False
 invalid = []
 hit_on_soft_17 = True
 cum_gain = 0
+basic_strategy_hard = pd.read_csv('basic_strategy_hard.csv', sep=';', index_col='Player hand')
+basic_strategy_soft = pd.read_csv('basic_strategy_soft.csv', sep=';', index_col='Player hand')
+basic_strategy_split = pd.read_csv('basic_strategy_split.csv', sep=';', index_col='Player hand')
 
-for _ in range(10000):
+
+for _ in trange(1000000):
     print('-'*50) if VERBOSE else None
     player_hands = [Hand([deck.cards.pop(), deck.cards.pop()], 0)]
     dealer_hand = Hand([deck.cards.pop(), deck.cards.pop()], 0)
@@ -164,20 +173,33 @@ for _ in range(10000):
             else:
                 player_hand.update_options()
                 print("Options: ", player_hand.options_available) if VERBOSE else None
-                player_choice = random.choice(player_hand.options_available)
-                print("Choice: ", player_choice) if VERBOSE else None
-                if player_choice == "Hit":
+                # player_choice = random.choice(player_hand.options_available)
+                if player_hand.is_splitable():
+                    player_choice = basic_strategy_split.loc[player_hand.cards[1].value, str(dealer_hand.cards[0].value)]
+                    print("Strategy from split table: ", player_choice) if VERBOSE else None
+                elif player_hand.is_soft():
+                    player_choice = basic_strategy_soft.loc[player_hand.value, str(dealer_hand.cards[0].value)]
+                    print("Strategy from soft table: ", player_choice) if VERBOSE else None
+                else:
+                    player_choice = basic_strategy_hard.loc[player_hand.value, str(dealer_hand.cards[0].value)]
+                    print("Strategy from hard table: ", player_choice) if VERBOSE else None
+                # print("Choice: ", player_choice) if VERBOSE else None
+                if player_choice == "H":
                     player_hand.hit(deck)
-                elif player_choice == "Stand":
+                    print("Hit!") if VERBOSE else None
+                elif player_choice == "S":
                     player_hand.stand()
-                elif player_choice == "Split":
+                    print("Stand!") if VERBOSE else None
+                elif player_choice == "SP":
                     player_hands.append(player_hand.split(deck))
                     print("Split!") if VERBOSE else None
-                elif player_choice == "Double Down":
+                elif player_choice == "DD":
                     player_hand.double_down(deck)
+                    print("Double down!") if VERBOSE else None
                 else:
                     print("Invalid input")
                     invalid.append((player_hand, player_choice))
+                    break
             print("Your hand: ", player_hand) if VERBOSE else None
             print("Your hand value: ", player_hand.evaluate()) if VERBOSE else player_hand.evaluate()
 
@@ -193,7 +215,7 @@ for _ in range(10000):
                 print("Dealer busts!") if VERBOSE else None
             elif dealer_hand.value < 17:
                 dealer_hand.hit(deck)
-            elif hit_on_soft_17 and dealer_hand.is_soft_17():
+            elif hit_on_soft_17 and dealer_hand.is_soft() and dealer_hand.value == 17:
                 print("Dealer hits on soft 17") if VERBOSE else None
                 dealer_hand.hit(deck)
             else:
@@ -270,7 +292,14 @@ group = df.groupby(['Hand Value', 'Hand Status', 'Dealer Card']).mean()
 group.to_csv('results.csv')
 
 group_cnt = df.groupby(['Hand Value', 'Hand Status', 'Dealer Card']).count()
+group_cnt.to_csv('results_cnt.csv')
 
 print('Cumulative gain:', cum_gain)
 print('END OF PROGRAM')
 # %%
+# %%
+# deck = Deck(0)
+
+# for i in range(10000):
+#     deck.add_card(Card('Spades', 'Ace', 11))
+#     # deck.add_card(Card('Spades', '3', 3))

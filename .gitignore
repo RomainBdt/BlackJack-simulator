@@ -125,3 +125,11 @@ dmypy.json
 
 # VSCode
 .vscode/
+
+group_unstack.xlsx
+
+results.csv
+
+~$group_unstack.xlsx
+
+results_cnt.csv
