@@ -290,6 +290,7 @@ for _ in trange(1000000):
 df = pd.DataFrame(results, columns = ['Hand Value', 'Hand Status', 'Dealer Card', 'Gain'])
 group = df.groupby(['Hand Value', 'Hand Status', 'Dealer Card']).mean()
 group.to_csv('results.csv')
+group.unstack().to_excel('group_unstack.xlsx')
 
 group_cnt = df.groupby(['Hand Value', 'Hand Status', 'Dealer Card']).count()
 group_cnt.to_csv('results_cnt.csv')
